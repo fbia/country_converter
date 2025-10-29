@@ -109,6 +109,26 @@ some_countries = pd.Series(['Australia', 'Belgium', 'Brazil', 'Bulgaria', 'Cypru
 iso3_codes = cc.pandas_convert(series=some_countries, to='ISO3')                  
 ```
 
+#### Use with Polars
+
+If you prefer Polars, `CountryConverter` provides a `polars_convert()` method
+that operates directly on a `polars.Series` and mirrors the `convert`
+semantics (including `enforce_list` and `not_found`). Example:
+
+``` python
+import polars as pl
+import country_converter as coco
+
+cc = coco.CountryConverter()
+series = pl.Series("country", ["United States", "DE", None, "China"]) 
+res = cc.polars_convert(series, to='ISO3', not_found='--')
+print(res.to_list())  # -> ['USA', 'DEU', '--', 'CHN']
+
+# not_found=None preserves the original values for unmapped entries
+res2 = cc.polars_convert(series, to='ISO3', not_found=None)
+print(res2.to_list())  # -> ['USA', 'DEU', None, 'CHN']
+```
+
 Convert between classification schemes:
 
 ``` python
