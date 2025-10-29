@@ -697,6 +697,87 @@ class CountryConverter:
 
         return series.map(mapping).fillna(series if not_found is None else not_found)
 
+    def polars_convert(
+        self,
+        series,
+        src=None,
+        to="ISO3",
+        enforce_list=False,
+        not_found="not found",
+        exclude_prefix=None,
+    ):
+        r"""Convert names in a Polars Series using CountryConverter.
+
+        Perform conversions directly on a Polars Series using native Polars
+        expressions for performance. The method follows the same semantics as
+        :meth:`convert` (parameters, ``enforce_list`` and ``not_found`` have
+        identical meaning).
+
+        Parameters
+        ----------
+        series : polars.Series
+            Series of country names to convert.
+
+        src, to, enforce_list, not_found, exclude_prefix
+            Same semantics as :meth:`convert`.
+
+        Returns
+        -------
+        polars.Series
+            Converted Series with the same length as the input.
+        """
+        try:
+            import polars as pl
+        except Exception as exc:  # pragma: no cover - dependency error
+            raise ImportError("polars is required for polars_convert. Install it with 'pip install polars'") from exc
+
+        if not isinstance(series, pl.Series):
+            raise TypeError("Input must be a Polars Series")
+
+        # short-circuit if nothing to do
+        if src == to:
+            return series
+
+        # Extract unique values (as Python list) and convert them once.
+        uniques = series.unique().to_list()
+
+        # Compute conversions for uniques using the requested not_found
+        # and enforce_list options so behaviour matches `convert` and
+        # `pandas_convert`.
+        converted_uniques = self.convert(
+            names=uniques,
+            src=src,
+            to=to,
+            not_found=not_found,
+            enforce_list=enforce_list,
+            exclude_prefix=exclude_prefix,
+        )
+
+        # Build full mapping original -> converted (one entry per unique).
+        mapping = dict(zip(uniques, converted_uniques))
+
+        # If enforce_list=True, replacements are lists; Polars' vectorized
+        # replace operations may struggle with list-valued replacements, so
+        # materialize via Python and return a Series of lists (matching
+        # pandas_convert behaviour).
+        if enforce_list:
+            input_list = series.to_list()
+            out_list = [mapping.get(val, (val if not_found is None else not_found)) for val in input_list]
+            return pl.Series(series.name, out_list)
+
+        # Apply mapping using Polars expressions on a tiny DataFrame.
+        # For not_found is None we keep original values for unmapped keys;
+        # otherwise we fill the provided sentinel.
+        df_tmp = pl.DataFrame({"_cc_tmp": series})
+
+        if not_found is None:
+            expr = pl.col("_cc_tmp").replace(mapping)
+        else:
+            expr = pl.col("_cc_tmp").replace_strict(mapping, default=not_found)
+
+        df_tmp = df_tmp.with_columns(expr.alias("_mapped"))
+        return df_tmp["_mapped"]
+
     @property
     def valid_class(self):
         """Valid strings for the converter."""
