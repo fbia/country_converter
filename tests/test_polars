@@ -1,0 +1,34 @@
+import pytest
+
+pl = pytest.importorskip("polars")
+import country_converter as coco
+
+
+def test_polars_convert_basic():
+    cc = coco.CountryConverter()
+    data = ["United States", "DE", "Atlantis", None, "China", "United States"]
+    s = pl.Series("country", data)
+
+    res = cc.polars_convert(s, to="ISO3", not_found="--")
+    assert isinstance(res, pl.Series)
+    out = res.to_list()
+    assert out[0] == "USA"
+    assert out[1] == "DEU"
+    assert out[2] == "--"
+
+    # not_found=None should keep original value for missing entries
+    res2 = cc.polars_convert(s, to="ISO3", not_found=None)
+    out2 = res2.to_list()
+    assert out2[2] == "Atlantis"
+
+
+def test_polars_convert_enforce_list():
+    cc = coco.CountryConverter()
+    data = ["United States", "DE", "China"]
+    s = pl.Series("country", data)
+
+    # enforce_list=True should return lists for each entry
+    res = cc.polars_convert(s, to="ISO3", enforce_list=True)
+    out = res.to_list()
+    assert isinstance(out[0], list)
+    assert out[0][0] == "USA"
